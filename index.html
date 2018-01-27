@@ -1,0 +1,322 @@
+<html>
+<head>
+	<meta charset="utf-8" />
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/semantic-ui/1.11.8/semantic.min.js"></script>
+	<script src="https://cdn.steemjs.com/lib/latest/steem.min.js"></script>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/semantic-ui/1.11.8/semantic.min.css"/>
+</head>
+
+<body style="background: #FFFFFF;">
+	<br><br>
+	<div class="ui grid">
+			<div class="five wide column"></div>
+			<div class="five wide column">
+				<div class="row">
+
+				<h3 class="ui header">Check my witnesses</h3>
+
+				<form class="ui form" id="account_form">
+					<div class="five wide field">
+						<input type="text" name="account_field" placeholder="Steem Account" id="account_field">
+					</div>
+					<button class="ui button" type="submit">Submit</button>
+					<div style="visibility:hidden" id="export"> 
+						<a class="item" onclick="copyToClipboard()">
+							<i class="icon copy" ></i> Copy URL
+						</a>
+						<br>
+					</div>
+				</form>
+			</div>
+			<!--
+			<div class="five wide column">
+				<h3 class="ui header">Who has voted for me</h3>
+				<form class="ui form" id="witness_form">
+					<div class="five wide field">
+						
+						<input type="text" name="witness" placeholder="witness" id="witness_field">
+					</div>
+					<button class="ui button" type="submit">Submit</button>
+				</form>
+			</div>
+			-->
+		</div>
+	
+		<div class="row">
+			<div class="two wide column"></div>
+			<div class="twelve wide column">	
+				<div class="ui basic segment">
+					<div class="ui disabled loader" id="loader"></div>
+						<p></p>
+				</div>
+					<div id="witnessTable"></div>
+					<div id="voterTable"></div>
+				</div>
+				<div class="ui modal" id="modaldiv">
+					<i class="close icon"></i>
+					<div class="header">
+						<span class="modal-title"><span>
+					</div>
+					<div class="content">
+						<p class="modal-details"></p>
+					</div>
+			</div>
+			<div class="two wide column"></div>
+		</div>
+	</div>
+	
+<script>
+var feedPriceMaxAge = 7*24;
+var now = new Date(); 
+var now_utc = new Date(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),  now.getUTCHours(), now.getUTCMinutes(), now.getUTCSeconds());
+var lastPublication = 15;
+var urlParams = new URLSearchParams(window.location.search);
+
+function copyToClipboard(element) {
+  var $temp = $("<input>");
+  $("body").append($temp);
+  $temp.val(window.location.href).select();
+  document.execCommand("copy");
+  $temp.remove();
+}
+
+$('#account_form').submit(function(event){
+	const regex = /@?([\w\d].*)/g;
+	account = $('#account_field')[0].value;
+	account = regex.exec(account)[1];
+	
+	$('.loader').toggleClass('disabled');
+	$('.loader').toggleClass('active');
+	$('#export').css("visibility","hidden");
+	getWitness(account);
+	event.preventDefault();
+});
+
+$('#witness_form').submit(function(event){
+	const regex = /@?([\w\d].*)/g;
+	account = $('#witness_field')[0].value;
+	account = regex.exec(account)[1];
+	
+	$('.loader').toggleClass('disabled');
+	$('.loader').toggleClass('active');
+	getVoters(account);
+	event.preventDefault();
+});
+
+
+
+
+
+$(document).ready(function() {
+	steemApi_endpoint = "https://api.steemit.com";
+	steem.api.setOptions({ url: steemApi_endpoint});
+	
+	steem.api.getConfig(function(err, result) {
+		if(err){
+			$('.modal-title').html("API connection problem");
+			details = "Cannot connect to Steem API endpoint :  " +  steemApi_endpoint;
+			$('.modal-details').html(details);
+			$('#modaldiv').modal('show');
+		}
+	});
+	
+	
+	
+	getMaximumBlocksize();
+
+	
+	if(urlParams.has('account')) {
+		getWitness(urlParams.get('account'))
+		$('.loader').toggleClass('disabled');
+		$('.loader').toggleClass('active');
+		$('#account_field').val(urlParams.get('account'))
+		getVoters(urlParams.get('account'));
+		
+	}
+
+	
+	
+});
+
+async function getMaximumBlocksize() {
+	const tmp = await steem.api.getDynamicGlobalPropertiesAsync();
+	var maximum_block_size = tmp.maximum_block_size;
+
+	sessionStorage.setItem("maximum_block_size",maximum_block_size)
+}
+	
+
+async function getVoters(account) {
+	const voters_list = [];
+	
+	
+}
+
+async function getWitness(account) {
+	const witness_list = [];
+	
+	const tmp = await steem.api.getAccountsAsync([account]);
+	
+	if(tmp == "") {
+		//User not exist. display error message
+			$('.loader').toggleClass('disabled');
+	$('.loader').toggleClass('active');
+		$('.modal-title').html("Error");
+		details = "Account @"+ account + " does not exist";
+		$('.modal-details').html(details);
+		$('#modaldiv').modal('show');
+	
+	}
+	else
+	{
+		for(let i = 0; i< tmp[0].witness_votes.length;i++) {
+			const tmp1 = await steem.api.getWitnessByAccountAsync(tmp[0].witness_votes[i]);
+			//console.log(tmp1)
+			witness_list[i] = tmp1;
+			const tmp2 = await steem.api.getDiscussionsByAuthorBeforeDateAsync(tmp[0].witness_votes[i],null, new Date().toISOString().split('.')[0],lastPublication);
+			lastWitnessUpdate = getLastWitnessUpdate(tmp2);
+			
+			witness_list[i].lastWitnessUpdate = {};
+			witness_list[i].lastWitnessUpdate = lastWitnessUpdate;
+		}
+		witness_list_sorted = witness_list.sort(function(a,b) {
+			return b.votes - a.votes;
+		})
+		
+		history.pushState({}, null, location.pathname+'?account='+account);
+		if(witness_list.length == 0){
+			$('.loader').toggleClass('disabled');
+			$('.loader').toggleClass('active');
+			$('.modal-title').html("Info");
+			details = "Account @"+ account + " has no vote";
+			$('.modal-details').html(details);
+			$('#modaldiv').modal('show');
+		}
+		else
+		{
+			//console.log(witness_list)
+			displayWitnessTable(witness_list);
+		}
+	}
+ }
+ 
+
+
+function displayWitnessTable(witness_list) {
+	$('.table').remove();
+	$table = $('<table>');
+	$table.addClass('ui celled table');
+	$('.loader').toggleClass('disabled');
+	$('.loader').toggleClass('active');
+	$('#export').css("visibility","visible");
+	
+	$thead = $table.append('<thead/>').children('thead');
+	$thead.append('<tr><th>Status</th><th>Name</th><th>Votes (MV)</th><th>Block Missed</th><th>Version</th><th>Registration Fee<br>APR<br>Block Size</th><th>Feed Price</th><th>Last witness-update (days)</th></tr>');
+	
+	$tbody=$table.append('<tbody/>').children('tbody');
+	for(let i=0;i<witness_list.length;i++) {
+		trown = $tbody.append('<tr />').children('tr:last')
+		if(witness_list[i].signing_key == "STM1111111111111111111111111111111114T1Anm") {
+			trown.addClass('error')
+			trown.append("<td>Inactive</td>")
+		}
+		else
+		{
+			trown.append("<td>Active</td>");
+		}
+		if(is_url(witness_list[i].url)) {
+			trown.append("<td>" + witness_list[i].owner + '<a target="_blank" href=' + witness_list[i].url  + '><i class="linkify icon"></i></a></td>');
+		}
+		else
+		{
+			trown.append("<td>" + witness_list[i].owner + '<i class="unlinkify icon"></i></td>');
+		}
+		
+		trown.append("<td>" + Number(Number(witness_list[i].votes) / 1e12).toFixed(2) + "</td>");
+		
+		trown.append("<td>" + witness_list[i].total_missed + "</td>");
+		trown.append("<td>" + witness_list[i].running_version + "</td>");
+		apr = witness_list[i].props.sbd_interest_rate/100;		
+		trown.append('<td>' + witness_list[i].props.account_creation_fee + "<br>"+apr+"% APR<br>" + witness_list[i].props.maximum_block_size+ "</td>");
+		/*
+		if(witness_list[i].props.maximum_block_size != sessionStorage.getItem("maximum_block_size") ) {
+			trown.append('<td><span style="color:orange;">' + witness_list[i].props.maximum_block_size + "</td>");
+		}
+		else
+		{
+			trown.append('<td><span style="color:green;">' + witness_list[i].props.maximum_block_size + "</td>");
+		}
+		*/
+		hour = Math.abs(now_utc - new Date(witness_list[i].last_sbd_exchange_update)) / 36e5;
+		if(hour < feedPriceMaxAge) {	
+			trown.append('<td>'+witness_list[i].sbd_exchange_rate.base+"<br>"+witness_list[i].sbd_exchange_rate.quote+'<br>'+Number(hour).toFixed(2) + " (h)</td>");
+			
+			//trown.append('<td>' + Number(hour).toFixed(2) + "</td>");
+		}
+		else
+		{
+			trown.append('<td>'+witness_list[i].sbd_exchange_rate.base+"<br>"+witness_list[i].sbd_exchange_rate.quote+'<br><span style="color:red;">'+Number(hour).toFixed(2) + "</span></td>");
+			//trown.append('<td><span style="color:red;">' + Number(hour).toFixed(2) + "</span></td>");
+		}
+		
+		if(witness_list[i].lastWitnessUpdate == undefined) {
+			trown.append("<td>No witness publication related found last " + lastPublication + " posts </td>");
+		}
+		else
+		{
+			trown.append("<td>" + Number(witness_list[i].lastWitnessUpdate.day).toFixed(2) + '<a target="_blank" href=' + witness_list[i].lastWitnessUpdate.link  + '><i class="linkify icon"></i></a></td>');
+		}
+	}
+	//.append('<tr />').children('tr').append('<th>A</th><th>B</th><th>C</th><th>D</th>');
+	
+	$table.appendTo('#witnessTable')
+}
+
+function is_url(str)
+{
+  regexp =  /^(?:(?:https?|ftp):\/\/)?(?:(?!(?:10|127)(?:\.\d{1,3}){3})(?!(?:169\.254|192\.168)(?:\.\d{1,3}){2})(?!172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})(?:[1-9]\d?|1\d\d|2[01]\d|22[0-3])(?:\.(?:1?\d{1,2}|2[0-4]\d|25[0-5])){2}(?:\.(?:[1-9]\d?|1\d\d|2[0-4]\d|25[0-4]))|(?:(?:[a-z\u00a1-\uffff0-9]-*)*[a-z\u00a1-\uffff0-9]+)(?:\.(?:[a-z\u00a1-\uffff0-9]-*)*[a-z\u00a1-\uffff0-9]+)*(?:\.(?:[a-z\u00a1-\uffff]{2,})))(?::\d{2,5})?(?:\/\S*)?$/;
+        if (regexp.test(str))
+        {
+          return true;
+        }
+        else
+        {
+          return false;
+        }
+}
+
+ function getLastWitnessUpdate(witness_publication) {
+	var data = {};
+	for(i = 0; i<witness_publication.length;i++) {
+		json_metadata = witness_publication[i].json_metadata
+		if( witness_publication[i].json_metadata!='{}' && witness_publication[i].json_metadata!=""){
+			json_metadata = JSON.parse(witness_publication[i].json_metadata);
+			if(json_metadata.tags!=undefined){
+				if(json_metadata.tags.indexOf("witness-update") !== -1 || json_metadata.tags.indexOf("witness-category") !== -1) {
+					day = Math.abs(now_utc - new Date(witness_publication[i].created)) / (24 * 36e5);
+					link = "https://steemit.com/" + witness_publication[i].parent_permlink + "/@" + witness_publication[i].author + "/" + witness_publication[i].permlink
+			
+					data.link = link;
+					data.day = day;
+					return data;
+				}
+			}
+		}
+		else
+		{
+			console.log("empty")
+		}
+
+	}
+}
+
+
+</script>
+
+</body>
+
+
+
+
+</html> 
